@@ -36,7 +36,6 @@ func init() {
 
 	// Use telegram bot
 	bot, err = tgbotapi.NewBotAPI(os.Getenv("PASSPHRASEBOT_TOKEN"))
-	bot.Debug = true
 	errPanic(err)
 	fmt.Printf("Authorized on account %s\n", bot.Self.UserName)
 }
@@ -66,7 +65,7 @@ func main() {
 		}
 		if m.Text == "Generate" {
 			deleteMessage(m.Chat.ID, m.MessageID)
-			msg.Text = fmt.Sprintf("<code>%s</code>", generatePassphrase(3, " "))
+			msg.Text = fmt.Sprintf("<code>%s</code>", generatePassphrase(words, 3, " "))
 			msg.ParseMode = tgbotapi.ModeHTML
 			msg.ReplyMarkup = inlPasswordOptions()
 			botSend(msg)
@@ -189,13 +188,13 @@ func deleteMessage(chatID int64, msgID int) error {
 	return err
 }
 
-// generatePassphrase takes pointer to the list of words,
-// amount of words and a separator. Returned value will be a string
-func generatePassphrase(n uint8, s string) string {
+// generatePassphrase takes the slice of words,
+// amount of words and a separator. Mnemonic password will be returned
+func generatePassphrase(wl []string, n uint8, s string) string {
 	var passphraseWords []string
 
 	for i := n; i > 0; i-- {
-		rnd, _ := rand.Int(rand.Reader, big.NewInt(int64(wordsLen)))
+		rnd, _ := rand.Int(rand.Reader, big.NewInt(int64(len(wl))))
 		passphraseWords = append(passphraseWords, (words)[rnd.Int64()])
 	}
 
@@ -203,9 +202,15 @@ func generatePassphrase(n uint8, s string) string {
 }
 
 // savePassword encrypts and saves user's password in the database
-func savePassword(userID int64, text string) {
+func savePassword(userID int64, password string) {
 	// TODO
-	fmt.Println("Imagine like I'm encrypting and saving password", text, "in the database. UserID =", userID)
+	fmt.Println("Imagine like I'm encrypting and saving password", password, "in the database. UserID =", userID)
+}
+
+// savePassword encrypts and saves user's password in the database
+func savePasswordNote(userID int64, password string, note string) {
+	// TODO
+	fmt.Println("Imagine like I'm encrypting and saving password", password, "in the database. UserID =", userID)
 }
 
 // genButton returns replyMarkup keyboard with one word Generate
