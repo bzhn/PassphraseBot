@@ -3,3 +3,6 @@
 /secret.json
 package-lock.json
 .env
+PassphraseBot
+*.tar
+*.exe

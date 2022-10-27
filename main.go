@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math/big"
 	"net/http"
 	"os"
@@ -23,7 +24,7 @@ var (
 
 func init() {
 	// Load environmental variables from file .env
-	godotenv.Load()
+	godotenv.Load("/secret/.env") //
 
 	var err error
 	// Get list of words and check if it's not empty
@@ -40,6 +41,14 @@ func init() {
 	fmt.Printf("Authorized on account %s\n", bot.Self.UserName)
 }
 
+func ToJson(data interface{}) string {
+	jsonData, err := json.MarshalIndent(data, "", "    ")
+	if err != nil {
+		return fmt.Sprint(err)
+	}
+	return string(jsonData)
+}
+
 func main() {
 
 	u := tgbotapi.NewUpdate(0)
@@ -51,6 +60,16 @@ func main() {
 
 		if upd.CallbackQuery != nil {
 			handleInlineButtonClick(upd.CallbackQuery)
+			continue
+		}
+
+		if upd.FromChat() == nil || upd.FromChat().Type != "private" {
+			log.Printf("The message is not private:\n%s", ToJson(upd.FromChat()))
+			continue
+		}
+
+		if upd.Message.Text == "" {
+			log.Printf("Got non-text message from chat")
 			continue
 		}
 
@@ -77,11 +96,6 @@ func main() {
 			continue
 		}
 	}
-}
-
-// delete
-func prints() {
-	fmt.Println(words)
 }
 
 // getWordList gets list of words from the providen url
@@ -125,10 +139,12 @@ func errPanic(err error) {
 }
 
 // botSend receive MessageConfig and tries to send it
-// If there is an error, the panic will be called
+// If there is an error
 func botSend(msg tgbotapi.MessageConfig) {
 	_, err := bot.Send(msg)
-	errPanic(err)
+	if err != nil {
+		fmt.Println("ERROR:", err)
+	}
 }
 
 // handleCommand handles commands from users
@@ -173,6 +189,11 @@ func handleUnknowMessage(m *tgbotapi.Message) (msg tgbotapi.MessageConfig) {
 // handleInlineButtonClick is called when user clicked the button on inline keyboard
 func handleInlineButtonClick(cq *tgbotapi.CallbackQuery) {
 	switch cq.Data {
+	case "regenerate":
+		err := regeneratePassword(cq.Message.Chat.ID, cq.Message.MessageID)
+		if err != nil {
+			log.Println(err)
+		}
 	case "delete":
 		deleteMessage(cq.Message.Chat.ID, cq.Message.MessageID)
 	case "save":
@@ -185,6 +206,16 @@ func handleInlineButtonClick(cq *tgbotapi.CallbackQuery) {
 func deleteMessage(chatID int64, msgID int) error {
 	dl := tgbotapi.NewDeleteMessage(chatID, msgID)
 	_, err := bot.Send(dl)
+	return err
+}
+
+// regeneratePassword takes chatID and messageID and tries to edit it with
+// new generated password
+func regeneratePassword(chatID int64, msgID int) error {
+	ec := tgbotapi.NewEditMessageText(chatID, msgID, fmt.Sprintf("<code>%s</code>", generatePassphrase(words, 3, " ")))
+	ec.ParseMode = tgbotapi.ModeHTML
+	ec.ReplyMarkup = inlPasswordOptions()
+	_, err := bot.Request(ec)
 	return err
 }
 
@@ -218,16 +249,21 @@ func genButton() tgbotapi.ReplyKeyboardMarkup {
 	return tgbotapi.NewReplyKeyboard(tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("Generate")))
 }
 
-// inlPasswordOptions returns replyMarkup as an inline keyboard with three options:
-// delete password, save password, save password with note
-func inlPasswordOptions() tgbotapi.InlineKeyboardMarkup {
-	return tgbotapi.NewInlineKeyboardMarkup(
+// inlPasswordOptions returns replyMarkup as an inline keyboard with the following options:
+// delete password, regenerate password, save password, save password with note
+func inlPasswordOptions() *tgbotapi.InlineKeyboardMarkup {
+	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🗑️ Delete passphrase", "delete"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔀 Regenerate passphrase", "regenerate"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("💾 Save", "save"),
 			tgbotapi.NewInlineKeyboardButtonData("🖊️ Save with note", "save_with_name"),
 		),
 	)
+
+	return &inlineKeyboard
 }
