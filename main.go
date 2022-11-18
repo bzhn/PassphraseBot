@@ -8,7 +8,6 @@ import (
 	"log"
 	"math/big"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -25,6 +24,7 @@ var (
 func init() {
 	// Load environmental variables from file .env
 	godotenv.Load("/secret/.env") //
+	godotenv.Load()               //
 
 	var err error
 	// Get list of words and check if it's not empty
@@ -35,10 +35,10 @@ func init() {
 		panic("Length of words is 0")
 	}
 
-	// Use telegram bot
-	bot, err = tgbotapi.NewBotAPI(os.Getenv("PASSPHRASEBOT_TOKEN"))
-	errPanic(err)
-	fmt.Printf("Authorized on account %s\n", bot.Self.UserName)
+	// // Use telegram bot
+	// bot, err = tgbotapi.NewBotAPI(os.Getenv("PASSPHRASEBOT_TOKEN"))
+	// errPanic(err)
+	// fmt.Printf("Authorized on account %s\n", bot.Self.UserName)
 }
 
 func ToJson(data interface{}) string {
@@ -50,7 +50,47 @@ func ToJson(data interface{}) string {
 }
 
 func main() {
+	// log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
+	// for {
+	// 	cycleStart := time.Now()
+	// 	var good int
+	// 	for i := 100; i != 0; i-- {
+
+	// 		// time.Sleep(200 * time.Millisecond)
+
+	// 		tt := time.Now()
+	// 		gpc := GeneratePasswordConfigNew()
+	// 		gpc.Length(15000)
+	// 		// newph, _ := gpc.Generate()
+	// 		_, err := gpc.Generate()
+	// 		if err != nil {
+	// 			log.Println(err)
+	// 		}
+	// 		newtime := time.Now().Sub(tt)
+	// 		// log.Println("New", len(newph), time.Now().Sub(tt))
+
+	// 		// time.Sleep(200 * time.Millisecond)
+	// 		t := time.Now()
+
+	// 		// pph := generatePassphrase(words, 150000, " ")
+	// 		generatePassphrase(words, 15000, " ")
+	// 		oldtime := time.Now().Sub(t)
+	// 		// log.Println("Old", len(pph), time.Now().Sub(t))
+
+	// 		if oldtime > newtime && i%10 == 0 {
+	// 			fmt.Print("🟩")
+	// 		} else if i%10 == 0 {
+	// 			fmt.Print("🟥")
+	// 		}
+
+	// 		if oldtime > newtime {
+	// 			good++
+	// 		}
+	// 	}
+
+	// 	fmt.Println(" ", good, time.Now().Sub(cycleStart).Nanoseconds())
+	// }
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates := bot.GetUpdatesChan(u)
@@ -169,11 +209,29 @@ Generate 3-words password with space as a separator:
 		msg.ParseMode = tgbotapi.ModeHTML
 		return
 
+	case "list":
+		msg.ReplyMarkup = genButton()
+		msg.Text = "In development. Later you'll be able to change the list that is used to generate passwords"
+	case "addlist":
+		msg.ReplyMarkup = genButton()
+		msg.Text = "In development. Later it will be possible to add custom lists."
+	case "vault":
+		msg.ReplyMarkup = genButton()
+		msg.Text = "In development. Later you'll have access to your vault, where passwords are stored"
+	case "encryption":
+		msg.ReplyMarkup = genButton()
+		msg.Text = "In development. Setup your encryption settings. Disable/enable encryption and change password for encryption"
+	case "search":
+		msg.ReplyMarkup = genButton()
+		msg.Text = "In development. Search your stored passphrases"
+
 	default:
 		msg.ReplyMarkup = genButton()
 		msg.Text = "Unknown command, sorry. Type /help to get help."
 		return
 	}
+
+	return
 }
 
 // handleUnknowMessage handles messages which have no text deletes them
@@ -221,7 +279,7 @@ func regeneratePassword(chatID int64, msgID int) error {
 
 // generatePassphrase takes the slice of words,
 // amount of words and a separator. Mnemonic password will be returned
-func generatePassphrase(wl []string, n uint8, s string) string {
+func generatePassphrase(wl []string, n int, s string) string {
 	var passphraseWords []string
 
 	for i := n; i > 0; i-- {
