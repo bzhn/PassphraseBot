@@ -61,7 +61,7 @@ type Wordlist struct {
 // A map with slices of words
 var Wordlists = make(map[WL]*Wordlist)
 
-func (wl WL) String() string {
+func (wl WL) ShortName() string {
 	return fmt.Sprint(wlNames[wl])
 }
 

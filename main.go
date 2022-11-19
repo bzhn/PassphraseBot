@@ -8,8 +8,11 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"os"
 	"strings"
 	"time"
+
+	"github.com/gomodule/redigo/redis"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
@@ -23,8 +26,8 @@ var (
 
 func init() {
 	// Load environmental variables from file .env
-	godotenv.Load("/secret/.env") //
-	godotenv.Load()               //
+	godotenv.Load("/secret/.env") // For docker
+	godotenv.Load()               // For host
 
 	var err error
 	// Get list of words and check if it's not empty
@@ -35,10 +38,10 @@ func init() {
 		panic("Length of words is 0")
 	}
 
-	// // Use telegram bot
-	// bot, err = tgbotapi.NewBotAPI(os.Getenv("PASSPHRASEBOT_TOKEN"))
-	// errPanic(err)
-	// fmt.Printf("Authorized on account %s\n", bot.Self.UserName)
+	// Use telegram bot
+	bot, err = tgbotapi.NewBotAPI(os.Getenv("PASSPHRASEBOT_TOKEN"))
+	errPanic(err)
+	fmt.Printf("Authorized on account %s\n", bot.Self.UserName)
 }
 
 func ToJson(data interface{}) string {
@@ -50,47 +53,20 @@ func ToJson(data interface{}) string {
 }
 
 func main() {
-	// log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
-	// for {
-	// 	cycleStart := time.Now()
-	// 	var good int
-	// 	for i := 100; i != 0; i-- {
+	// # Test
 
-	// 		// time.Sleep(200 * time.Millisecond)
+	pool := NewRedisPool(":6379")
+	conn := NewConn(pool)
+	defer conn.Close()
 
-	// 		tt := time.Now()
-	// 		gpc := GeneratePasswordConfigNew()
-	// 		gpc.Length(15000)
-	// 		// newph, _ := gpc.Generate()
-	// 		_, err := gpc.Generate()
-	// 		if err != nil {
-	// 			log.Println(err)
-	// 		}
-	// 		newtime := time.Now().Sub(tt)
-	// 		// log.Println("New", len(newph), time.Now().Sub(tt))
+	sr := conn.NewRedisSetRequest()
+	ttl, err := time.Parse("20060102-1504", "20221119-0528")
+	log.Print("time parse ERROR: ", err, ttl)
+	sr.Key("newvar").Value("I'm working").ExpireAt(ttl)
+	log.Print(sr.SetPersonList(172035, 2))
+	// * Test
 
-	// 		// time.Sleep(200 * time.Millisecond)
-	// 		t := time.Now()
-
-	// 		// pph := generatePassphrase(words, 150000, " ")
-	// 		generatePassphrase(words, 15000, " ")
-	// 		oldtime := time.Now().Sub(t)
-	// 		// log.Println("Old", len(pph), time.Now().Sub(t))
-
-	// 		if oldtime > newtime && i%10 == 0 {
-	// 			fmt.Print("🟩")
-	// 		} else if i%10 == 0 {
-	// 			fmt.Print("🟥")
-	// 		}
-
-	// 		if oldtime > newtime {
-	// 			good++
-	// 		}
-	// 	}
-
-	// 	fmt.Println(" ", good, time.Now().Sub(cycleStart).Nanoseconds())
-	// }
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates := bot.GetUpdatesChan(u)
@@ -324,4 +300,18 @@ func inlPasswordOptions() *tgbotapi.InlineKeyboardMarkup {
 	)
 
 	return &inlineKeyboard
+}
+
+func NewRedisPool(address string) *redis.Pool {
+	return &redis.Pool{
+		MaxIdle:   80,
+		MaxActive: 12000, // max number of connections
+		Dial: func() (redis.Conn, error) {
+			c, err := redis.Dial("tcp", address)
+			if err != nil {
+				panic(err.Error())
+			}
+			return c, err
+		},
+	}
 }
