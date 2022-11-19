@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  passphrasebot:
+    build: .
+    networks:
+      - pphbot-back
+    links:
+      - redis
+    restart: always
+  redis:
+    image: d29f18e8bc92
+    networks:
+      - pphbot-back
+    restart: always 
+networks:
+  pphbot-back:

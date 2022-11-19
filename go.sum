@@ -1,3 +1,5 @@
+github.com/bzhn/strkit v0.0.0-20221101163517-ae4a807c5423 h1:Wcu/OJ8HiodH+9d7WZP06qeGwmtFBjUbWawIPV0IgQE=
+github.com/bzhn/strkit v0.0.0-20221101163517-ae4a807c5423/go.mod h1:VAWf18MPwxB7GBTxK/0gkA/Ora2mfZkI6zHLefkWzEI=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1 h1:wG8n/XJQ07TmjbITcGiUaOtXxdrINDz1b0J1w0SzqDc=
 github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1/go.mod h1:A2S0CWkNylc2phvKXWBBdD3K0iGnDBGbzRpISP2zBl8=

@@ -169,6 +169,42 @@ func (r *RedisSetRequest) SetPersonList(PersonID int64, ListID WL) error {
 	return r.Set(context.Background()) // TODO: use context in the future
 }
 
+// Set last action of a person to the cache
+func (r *RedisSetRequest) SetLastAction(PersonID int64, action LastAction) error {
+	if PersonID == 0 {
+		return errors.New("Invalid person's ID")
+	}
+
+	r.key = fmt.Sprintf("lastact:%d", PersonID)
+	r.value = action
+	r.expireInSec = 3600               // one hour for making an action
+	return r.Set(context.Background()) // TODO: use context in the future
+}
+
+// Set number of words in the generated passwords for the person
+func (r *RedisSetRequest) SetNumberOfWords(PersonID int64, n int) error {
+	if PersonID == 0 {
+		return errors.New("Invalid person's ID")
+	}
+
+	r.key = fmt.Sprintf("wordsn:%d", PersonID)
+	r.value = n
+	r.expireAt = time.Now().Add(365 * 24 * time.Hour) // To free some memory after a year
+	return r.Set(context.Background())                // TODO: use context in the future
+}
+
+// Set separator for the generated passwords for the person
+func (r *RedisSetRequest) SetSeparator(PersonID int64, s string) error {
+	if PersonID == 0 {
+		return errors.New("Invalid person's ID")
+	}
+
+	r.key = fmt.Sprintf("sep:%d", PersonID)
+	r.value = s
+	r.expireAt = time.Now().Add(365 * 24 * time.Hour) // To free some memory after a year
+	return r.Set(context.Background())                // TODO: use context in the future
+}
+
 type RedisGetRequest struct {
 	conn RedisConn
 	id   int64  // any id as a part of redis key (after colon)
@@ -189,7 +225,7 @@ func (r *RedisGetRequest) Key(k string) *RedisGetRequest {
 	return r
 }
 
-// Set key for request
+// Set ID for request
 func (r *RedisGetRequest) ID(id int64) *RedisGetRequest {
 	r.id = id
 	return r
@@ -212,4 +248,63 @@ func (r *RedisGetRequest) GetPersonList() WL {
 		return 0
 	}
 	return WL(n)
+}
+
+func (r *RedisGetRequest) GetLastAction() (LastAction, error) {
+	la, err := r.conn.doString("GET", fmt.Sprintf("lastact:%d", r.id))
+	return LastAction(la), err
+}
+
+func (r *RedisGetRequest) GetWordsNumber() (int, error) {
+	n, err := r.conn.doInt("GET", fmt.Sprintf("wordsn:%d", r.id))
+	return n, err
+}
+
+func (r *RedisGetRequest) GetSeparator() (string, error) {
+	s, err := r.conn.doString("GET", fmt.Sprintf("sep:%d", r.id))
+	return s, err
+}
+
+type RedisDelRequest struct {
+	conn RedisConn
+	id   int64  // any id as a part of redis key (after colon)
+	key  string // use key instead of id
+}
+
+func (r RedisConn) NewRedisDelRequest() *RedisDelRequest {
+	return func() *RedisDelRequest {
+		return &RedisDelRequest{
+			conn: r,
+		}
+	}()
+}
+
+// Set key for request
+func (r *RedisDelRequest) Key(k string) *RedisDelRequest {
+	r.key = k
+	return r
+}
+
+// Set ID for request
+func (r *RedisDelRequest) ID(id int64) *RedisDelRequest {
+	r.id = id
+	return r
+}
+
+// Exec is used to delete value from cache.
+//
+// You have to specify Redis connection and key to use this function
+func (r *RedisDelRequest) Exec() error {
+	_, err := r.conn.do("DEL", r.key)
+	return err
+}
+
+// You have to specify conn and id in order to use this function
+func (r *RedisDelRequest) DeleteLastAction() error {
+	if r.id == 0 {
+		return errors.New("You have to specify id of a person")
+	}
+	r.Key(fmt.Sprintf("lastact:%d", r.id))
+	err := r.Exec()
+	return err
 }
