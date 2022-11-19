@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
@@ -42,6 +43,21 @@ func (r RedisConn) NewRedisRequest() *RedisRequest {
 
 func (r RedisConn) do(commandName string, args ...interface{}) (reply interface{}, err error) {
 	return r.conn.Do(commandName, args...)
+}
+
+func (r RedisConn) doInt(commandName string, args ...interface{}) (reply int, err error) {
+	n, err := redis.Int(r.do(commandName, args...))
+	return n, err
+}
+
+func (r RedisConn) doInt64(commandName string, args ...interface{}) (reply int64, err error) {
+	n, err := redis.Int64(r.do(commandName, args...))
+	return n, err
+}
+
+func (r RedisConn) doString(commandName string, args ...interface{}) (reply string, err error) {
+	n, err := redis.String(r.do(commandName, args...))
+	return n, err
 }
 
 // Change command of the redis request struct
@@ -141,7 +157,7 @@ func (r *RedisSetRequest) Set(ctx context.Context) error {
 
 // Set desired wordlist of a person to the cache
 func (r *RedisSetRequest) SetPersonList(PersonID int64, ListID WL) error {
-	if PersonID == 0 || ListID == 0 {
+	if PersonID == 0 {
 		return errors.New("Invalid person's or list's ID")
 	}
 	if ListID >= endofwl || ListID < 0 {
@@ -151,4 +167,49 @@ func (r *RedisSetRequest) SetPersonList(PersonID int64, ListID WL) error {
 	r.key = fmt.Sprintf("plist:%d", PersonID)
 	r.value = ListID
 	return r.Set(context.Background()) // TODO: use context in the future
+}
+
+type RedisGetRequest struct {
+	conn RedisConn
+	id   int64  // any id as a part of redis key (after colon)
+	key  string // use key instead of id
+}
+
+func (r RedisConn) NewRedisGetRequest() *RedisGetRequest {
+	return func() *RedisGetRequest {
+		return &RedisGetRequest{
+			conn: r,
+		}
+	}()
+}
+
+// Set key for request
+func (r *RedisGetRequest) Key(k string) *RedisGetRequest {
+	r.key = k
+	return r
+}
+
+// Set key for request
+func (r *RedisGetRequest) ID(id int64) *RedisGetRequest {
+	r.id = id
+	return r
+}
+
+// Get listID of person. Returns 0 if not found
+func (r *RedisGetRequest) GetPersonList() WL {
+	if r.id == 0 {
+		n, err := r.conn.doInt("GET", r.key)
+		if err != nil {
+			log.Println("ERROR:", err)
+			return 0
+		}
+		return WL(n)
+	}
+
+	n, err := r.conn.doInt("GET", fmt.Sprintf("plist:%d", r.id))
+	if err != nil {
+		log.Println("ERROR:", err)
+		return 0
+	}
+	return WL(n)
 }

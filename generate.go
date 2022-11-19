@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 type GeneratePasswordConfig struct {
@@ -74,7 +76,7 @@ var wlNames = map[WL]string{
 	dice_short2_en: `Dice Short 2`,
 }
 
-// Length of each wordlist
+// Length of each wordlist (used to save memory when allocating it for lists)
 var wlCapacities = map[WL]int{
 	bip39_en:       2048,
 	wordle_en:      12972,
@@ -83,7 +85,7 @@ var wlCapacities = map[WL]int{
 	dice_short2_en: 1296,
 }
 
-// Links where I you can download wordlists in JSON format
+// Links where you can download wordlists in JSON format
 var wlLink = map[WL]string{
 	bip39_en:       `https://raw.githubusercontent.com/bzhn/passph/master/wordlists/bip39_dictionary.json`,
 	wordle_en:      `https://raw.githubusercontent.com/bzhn/passph/master/wordlists/wordle-powerlanguage.json`,
@@ -117,9 +119,44 @@ func init() {
 		// wordlist[wl] = wlSlice
 	}
 
+	// Keyboard on /list command
+	IKBWordlistChooser = func() tgbotapi.InlineKeyboardMarkup {
+		var ikb [][]tgbotapi.InlineKeyboardButton
+
+		// Loop through all wordlists and add them to keyboard
+		for n := WL(0); n < endofwl; n++ {
+			var ikbrow []tgbotapi.InlineKeyboardButton
+			ikbrow = append(ikbrow, tgbotapi.NewInlineKeyboardButtonData(Wordlists[n].Name(), fmt.Sprintf("setwl$$%d", n)))
+
+			// Finally, add the cancel button
+			if n+1 == endofwl {
+				if n%2 == 0 {
+					// Place Cancel near the last element
+					ikbrow = append(ikbrow, tgbotapi.NewInlineKeyboardButtonData("Cancel", "system$$cancel"))
+					ikb = append(ikb, ikbrow)
+				} else {
+					// Finish current row and create a new one with one cancel button
+					ikb = append(ikb, ikbrow)
+					ikb = append(ikb, tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Cancel", "system$$cancel")))
+				}
+				continue
+			}
+
+			// Try to add one button next to first
+			if n+1 < endofwl {
+				n++
+				ikbrow = append(ikbrow, tgbotapi.NewInlineKeyboardButtonData(Wordlists[n].Name(), fmt.Sprintf("setwl$$%d", n)))
+			}
+
+			ikb = append(ikb, ikbrow)
+		}
+		return tgbotapi.InlineKeyboardMarkup{
+			InlineKeyboard: ikb,
+		}
+	}()
 }
 
-func GeneratePasswordConfigNew() *GeneratePasswordConfig {
+func NewGeneratePasswordConfig() *GeneratePasswordConfig {
 	config := new(GeneratePasswordConfig)
 	config.length = 3
 	config.separator = " "
@@ -128,18 +165,21 @@ func GeneratePasswordConfigNew() *GeneratePasswordConfig {
 }
 
 // Change amount of words in the future passphrase
-func (gpc *GeneratePasswordConfig) Length(n int) {
+func (gpc *GeneratePasswordConfig) Length(n int) *GeneratePasswordConfig {
 	gpc.length = n
+	return gpc
 }
 
 // Change separator in the future passphrase
-func (gpc *GeneratePasswordConfig) Separator(s string) {
+func (gpc *GeneratePasswordConfig) Separator(s string) *GeneratePasswordConfig {
 	gpc.separator = s
+	return gpc
 }
 
 // Change wordlist of the future passphrase
-func (gpc *GeneratePasswordConfig) Wordlist(n int) {
-	gpc.wordlist = WL(n)
+func (gpc *GeneratePasswordConfig) Wordlist(wl WL) *GeneratePasswordConfig {
+	gpc.wordlist = wl
+	return gpc
 }
 
 // Change wordlist of the future passphrase
@@ -158,7 +198,7 @@ func (gpc *GeneratePasswordConfig) Valid() bool {
 // Change wordlist of the future passphrase
 func (gpc *GeneratePasswordConfig) Generate() (string, error) {
 	if !gpc.Valid() {
-		return "", errors.New("Generate password config is not valid")
+		return " ", errors.New("Generate password config is not valid")
 	}
 
 	var parts []string

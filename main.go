@@ -1,14 +1,15 @@
 package main
 
 import (
-	"crypto/rand"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,12 +60,14 @@ func main() {
 	pool := NewRedisPool(":6379")
 	conn := NewConn(pool)
 	defer conn.Close()
+	mainCtx := context.WithValue(context.Background(), "redis-conn", conn)
 
 	sr := conn.NewRedisSetRequest()
-	ttl, err := time.Parse("20060102-1504", "20221119-0528")
+	ttl, err := time.Parse("20060102-1504", "20221119-1428")
 	log.Print("time parse ERROR: ", err, ttl)
 	sr.Key("newvar").Value("I'm working").ExpireAt(ttl)
 	log.Print(sr.SetPersonList(172035, 2))
+
 	// * Test
 
 	u := tgbotapi.NewUpdate(0)
@@ -75,7 +78,7 @@ func main() {
 	for upd := range updates {
 
 		if upd.CallbackQuery != nil {
-			handleInlineButtonClick(upd.CallbackQuery)
+			handleInlineButtonClick(mainCtx, upd.CallbackQuery)
 			continue
 		}
 
@@ -100,10 +103,7 @@ func main() {
 		}
 		if m.Text == "Generate" {
 			deleteMessage(m.Chat.ID, m.MessageID)
-			msg.Text = fmt.Sprintf("<code>%s</code>", generatePassphrase(words, 3, " "))
-			msg.ParseMode = tgbotapi.ModeHTML
-			msg.ReplyMarkup = inlPasswordOptions()
-			botSend(msg)
+			generatePassphrase(mainCtx, m.Chat.ID)
 			continue
 		}
 		if m.IsCommand() {
@@ -186,7 +186,7 @@ Generate 3-words password with space as a separator:
 		return
 
 	case "list":
-		msg.ReplyMarkup = genButton()
+		msg.ReplyMarkup = IKBWordlistChooser
 		msg.Text = "In development. Later you'll be able to change the list that is used to generate passwords"
 	case "addlist":
 		msg.ReplyMarkup = genButton()
@@ -221,10 +221,37 @@ func handleUnknowMessage(m *tgbotapi.Message) (msg tgbotapi.MessageConfig) {
 }
 
 // handleInlineButtonClick is called when user clicked the button on inline keyboard
-func handleInlineButtonClick(cq *tgbotapi.CallbackQuery) {
+func handleInlineButtonClick(ctx context.Context, cq *tgbotapi.CallbackQuery) {
+	log.Println("Inline button click:", cq.Data)
+
+	if complexDataParts := strings.Split(cq.Data, "$$"); len(complexDataParts) == 2 {
+		switch complexDataParts[0] {
+		case "setwl":
+			if c, ok := ctx.Value("redis-conn").(RedisConn); ok {
+				wl, err := strconv.Atoi(complexDataParts[1])
+				if err != nil {
+					log.Println("Can't convert to int second part of cq data", err)
+					return
+				}
+				err = c.NewRedisSetRequest().SetPersonList(cq.From.ID, WL(wl))
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				callbackAnwer(cq.ID, fmt.Sprintf("%s is your new wordlist", WL(wl).ShortName()))
+
+				return
+
+			} else {
+				log.Println("not ok")
+			}
+		}
+		return
+	}
+
 	switch cq.Data {
 	case "regenerate":
-		err := regeneratePassword(cq.Message.Chat.ID, cq.Message.MessageID)
+		err := regeneratePassword(ctx, cq)
 		if err != nil {
 			log.Println(err)
 		}
@@ -232,6 +259,10 @@ func handleInlineButtonClick(cq *tgbotapi.CallbackQuery) {
 		deleteMessage(cq.Message.Chat.ID, cq.Message.MessageID)
 	case "save":
 		savePassword(cq.From.ID, cq.Message.Text)
+		callbackAnwer(cq.ID, "Your password wasn't saved. This functionality is under maintenance.")
+	case "system$$cancel":
+		deleteMessage(cq.From.ID, cq.Message.MessageID)
+
 	}
 
 }
@@ -243,27 +274,67 @@ func deleteMessage(chatID int64, msgID int) error {
 	return err
 }
 
-// regeneratePassword takes chatID and messageID and tries to edit it with
-// new generated password
-func regeneratePassword(chatID int64, msgID int) error {
-	ec := tgbotapi.NewEditMessageText(chatID, msgID, fmt.Sprintf("<code>%s</code>", generatePassphrase(words, 3, " ")))
-	ec.ParseMode = tgbotapi.ModeHTML
-	ec.ReplyMarkup = inlPasswordOptions()
-	_, err := bot.Request(ec)
-	return err
+// Push a new callback message to the user
+func callbackAnwer(cqID string, text string) {
+	c := tgbotapi.NewCallback(cqID, text)
+	bot.Request(c)
+}
+
+// regeneratePassword context with redis connection and callback query
+// and tries to edit it with new generated password
+func regeneratePassword(ctx context.Context, cq *tgbotapi.CallbackQuery) error {
+	chatID := cq.From.ID
+	msgID := cq.Message.MessageID
+
+	// Get list of a user
+	if rc, ok := ctx.Value("redis-conn").(RedisConn); ok {
+		wl := rc.NewRedisGetRequest().ID(chatID).GetPersonList()
+		gpc := NewGeneratePasswordConfig().Wordlist(wl)
+		passphrase, err := gpc.Generate()
+		if err != nil {
+			return err
+		}
+
+		ec := tgbotapi.NewEditMessageText(chatID, msgID, fmt.Sprintf("<code>%s</code>", passphrase))
+		ec.ParseMode = tgbotapi.ModeHTML
+		ec.ReplyMarkup = inlPasswordOptions()
+		_, err = bot.Request(ec)
+		if err != nil {
+			return err
+		}
+
+		callbackAnwer(cq.ID, fmt.Sprintf("You use %s wordlist", wl.ShortName()))
+
+		return nil
+	}
+
+	return errors.New("Can't connect to Redis")
 }
 
 // generatePassphrase takes the slice of words,
 // amount of words and a separator. Mnemonic password will be returned
-func generatePassphrase(wl []string, n int, s string) string {
-	var passphraseWords []string
+func generatePassphrase(ctx context.Context, chatID int64) error {
 
-	for i := n; i > 0; i-- {
-		rnd, _ := rand.Int(rand.Reader, big.NewInt(int64(len(wl))))
-		passphraseWords = append(passphraseWords, (words)[rnd.Int64()])
+	if rc, ok := ctx.Value("redis-conn").(RedisConn); ok {
+		wl := rc.NewRedisGetRequest().ID(chatID).GetPersonList()
+		gpc := NewGeneratePasswordConfig().Wordlist(wl)
+		passphrase, err := gpc.Generate()
+		if err != nil {
+			return err
+		}
+
+		msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("<code>%s</code>", passphrase))
+		msg.ParseMode = tgbotapi.ModeHTML
+		msg.ReplyMarkup = inlPasswordOptions()
+		_, err = bot.Send(msg)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	}
 
-	return strings.Join(passphraseWords, s)
+	return errors.New("Can't connect to Redis")
 }
 
 // savePassword encrypts and saves user's password in the database
