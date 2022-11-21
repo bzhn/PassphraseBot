@@ -15,12 +15,16 @@ import (
 
 	"github.com/bzhn/strkit"
 	"github.com/gomodule/redigo/redis"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
 )
 
 type LastAction string
+
+var logger *zap.Logger
 
 const (
 	laSetSeparator LastAction = "setseparator"
@@ -35,7 +39,8 @@ var (
 )
 
 var (
-	ErrCantParseCtx = errors.New("Can't parse context value")
+	ErrCantParseCtx  = errors.New("Can't parse context value")
+	ErrCantConnRedis = errors.New("Can't connect to redis")
 
 	ErrSeparatorTooLong          = errors.New("Separator is too long")
 	ErrNumberOfWordsTooBig       = errors.New("Number of words is too big")
@@ -44,23 +49,19 @@ var (
 )
 
 func init() {
+	// Initialise logger
+	logger = NewLogger()
+
 	// Load environmental variables from file .env
 	godotenv.Load("/secret/.env") // For docker
 	godotenv.Load()               // For host
 
 	var err error
-	// Get list of words and check if it's not empty
-	words, err = getWordList("https://raw.githubusercontent.com/bzhn/passph/master/wordlists/bip39_dictionary.json")
-	errPanic(err)
-	wordsLen = len(words)
-	if wordsLen == 0 {
-		panic("Length of words is 0")
-	}
 
 	// Use telegram bot
 	bot, err = tgbotapi.NewBotAPI(os.Getenv("PASSPHRASEBOT_TOKEN"))
 	errPanic(err)
-	fmt.Printf("Authorized on account %s\n", bot.Self.UserName)
+	logger.Info("Connected to Telegram Bot API", zap.String("username", bot.Self.UserName))
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
@@ -68,27 +69,19 @@ func init() {
 func ToJson(data interface{}) string {
 	jsonData, err := json.MarshalIndent(data, "", "    ")
 	if err != nil {
-		return fmt.Sprint(err)
+		logger.Error("Can't convert data to json", zap.String("type", fmt.Sprintf("%T", data)))
+		return ""
 	}
 	return string(jsonData)
 }
 
 func main() {
 
-	// # Test
-
 	pool := NewRedisPool("redis:6379")
 	conn := NewConn(pool)
 	defer conn.Close()
 	mainCtx := context.WithValue(context.Background(), "redis-conn", conn)
-
-	sr := conn.NewRedisSetRequest()
-	ttl, err := time.Parse("20060102-1504", "20221119-1428")
-	log.Print("time parse ERROR: ", err, ttl)
-	sr.Key("newvar").Value("I'm working").ExpireAt(ttl)
-	log.Print(sr.SetPersonList(172035, 2))
-
-	// * Test
+	logger.Info("Created a new redis connection")
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
@@ -138,10 +131,9 @@ func main() {
 			updCtx = context.WithValue(updCtx, "msg", m.Text)
 			err := handleLastActionText(updCtx)
 			if err != nil {
-				log.Println(err)
+				log.Println("Can't handle last action", err)
 			}
 		}
-
 	}
 }
 
@@ -181,7 +173,7 @@ func getWordList(url string) (words []string, err error) {
 // It's a shortener of error handling
 func errPanic(err error) {
 	if err != nil {
-		panic(err)
+		logger.Panic("", zap.Error(err))
 	}
 }
 
@@ -190,13 +182,14 @@ func errPanic(err error) {
 func botSend(msg tgbotapi.MessageConfig) {
 	_, err := bot.Send(msg)
 	if err != nil {
-		fmt.Println("ERROR:", err)
+		logger.Error("Can't send message to user", zap.Error(err), zap.Int64("personid", msg.ChatID))
 	}
 }
 
 // handleCommand handles commands from users
 // and returns a message that has to be sent
 func handleCommand(ctx context.Context, m *tgbotapi.Message) (msg tgbotapi.MessageConfig) {
+	logger.Info("Got command from user", zap.String("command", m.Command()))
 	msg.ChatID = m.Chat.ID
 	switch m.Command() {
 	case "start":
@@ -270,6 +263,7 @@ Featuring longer words that may be more memorable (6^4 = 1296 words)
 	default:
 		msg.ReplyMarkup = genButton()
 		msg.Text = "Unknown command, sorry. Type /help to get help."
+		logger.Warn("Got unknown command from user", zap.String("command", m.Command()))
 		return
 	}
 
@@ -288,7 +282,6 @@ func handleUnknowMessage(m *tgbotapi.Message) (msg tgbotapi.MessageConfig) {
 
 // handleInlineButtonClick is called when user clicked the button on inline keyboard
 func handleInlineButtonClick(ctx context.Context, cq *tgbotapi.CallbackQuery) {
-	log.Println("Inline button click:", cq.Data)
 
 	if complexDataParts := strings.Split(cq.Data, "$$"); len(complexDataParts) == 2 {
 		switch complexDataParts[0] {
@@ -305,20 +298,20 @@ func handleInlineButtonClick(ctx context.Context, cq *tgbotapi.CallbackQuery) {
 			if c, ok := ctx.Value("redis-conn").(RedisConn); ok {
 				wl, err := strconv.Atoi(complexDataParts[1])
 				if err != nil {
-					log.Println("Can't convert to int second part of cq data", err)
+					logger.Error("Can't convert to int second part of cq data", zap.Error(err))
 					return
 				}
 				err = c.NewRedisSetRequest().SetPersonList(cq.From.ID, WL(wl))
 				if err != nil {
-					log.Println(err)
+					logger.Error("Can't set person's list", zap.Error(err))
 					return
 				}
 				callbackAnswer(cq.ID, fmt.Sprintf("%s is your new wordlist", WL(wl).ShortName()))
-
+				logger.Info("Changed wordlist of user", zap.Int64("personid", cq.From.ID))
 				return
 
 			} else {
-				log.Println("not ok")
+				logger.Error("Can't get redis conn from context", zap.Error(ErrCantParseCtx))
 			}
 		}
 		return
@@ -328,7 +321,7 @@ func handleInlineButtonClick(ctx context.Context, cq *tgbotapi.CallbackQuery) {
 	case "regenerate":
 		err := regeneratePassword(ctx, cq)
 		if err != nil {
-			log.Println(err)
+			logger.Error("Can't regenerate a password", zap.Error(err))
 		}
 	case "delete":
 		deleteMessage(cq.Message.Chat.ID, cq.Message.MessageID)
@@ -368,23 +361,24 @@ func regeneratePassword(ctx context.Context, cq *tgbotapi.CallbackQuery) error {
 				if n > 0 {
 					return n
 				} else {
-					log.Println("Amount of words is less than 1")
+					logger.Error("Amount of words is less than 1")
 					return 3
 				}
 			} else {
-				log.Println(err)
+				logger.Error("Can't get words number", zap.Error(err))
 				return 3
 			}
 		}()
 
 		sep, err := rg.GetSeparator()
 		if err != nil {
-			log.Println(err)
-			sep = "-"
+			logger.Error("Can't get separator", zap.Error(err))
+			sep = " "
 		}
 		gpc := NewGeneratePasswordConfig().Wordlist(wl).Length(n).Separator(sep)
 		passphrase, err := gpc.Generate()
 		if err != nil {
+			logger.Error("Can't generate password", zap.Error(err), zap.Any("config", gpc))
 			return err
 		}
 
@@ -393,6 +387,7 @@ func regeneratePassword(ctx context.Context, cq *tgbotapi.CallbackQuery) error {
 		ec.ReplyMarkup = inlPasswordOptions()
 		_, err = bot.Request(ec)
 		if err != nil {
+			logger.Error("Can't edit message while regenerating a new password", zap.Error(err))
 			return err
 		}
 
@@ -401,7 +396,8 @@ func regeneratePassword(ctx context.Context, cq *tgbotapi.CallbackQuery) error {
 		return nil
 	}
 
-	return errors.New("Can't connect to Redis")
+	logger.Error("Can't get redis connection from the context")
+	return ErrCantConnRedis
 }
 
 // generatePassphrase takes the slice of words,
@@ -416,23 +412,24 @@ func generatePassphrase(ctx context.Context, chatID int64) error {
 				if n > 0 {
 					return n
 				} else {
-					log.Println("Amount of words is less than 1")
+					logger.Error("Amount of words is less than 1", zap.Int64("personid", chatID))
 					return 3
 				}
 			} else {
-				log.Println(err)
+				logger.Warn("Can't get words number from redis", zap.Error(err))
 				return 3
 			}
 		}()
 
 		sep, err := rg.GetSeparator()
 		if err != nil {
-			log.Println(err)
+			logger.Warn("Can't get separator", zap.Error(err))
 			sep = "-"
 		}
 		gpc := NewGeneratePasswordConfig().Wordlist(wl).Length(n).Separator(sep)
 		passphrase, err := gpc.Generate()
 		if err != nil {
+			logger.Error("Can't create a new generate password config", zap.Error(err))
 			return err
 		}
 
@@ -447,19 +444,20 @@ func generatePassphrase(ctx context.Context, chatID int64) error {
 		return nil
 	}
 
+	logger.Error("Can't parse connection from the context", zap.Error(ErrCantConnRedis))
 	return errors.New("Can't connect to Redis")
 }
 
 // savePassword encrypts and saves user's password in the database
 func savePassword(userID int64, password string) {
 	// TODO
-	fmt.Println("Imagine like I'm encrypting and saving password", password, "in the database. UserID =", userID)
+	// fmt.Println("Imagine like I'm encrypting and saving password", password, "in the database. UserID =", userID)
 }
 
 // savePassword encrypts and saves user's password in the database
 func savePasswordNote(userID int64, password string, note string) {
 	// TODO
-	fmt.Println("Imagine like I'm encrypting and saving password", password, "in the database. UserID =", userID)
+	// fmt.Println("Imagine like I'm encrypting and saving password", password, "in the database. UserID =", userID)
 }
 
 // genButton returns replyMarkup keyboard with one word Generate
@@ -503,7 +501,10 @@ func NewRedisPool(address string) *redis.Pool {
 // Try to parse integer
 // 0 is returned if it's impossible to do so
 func ParseInt(s string) int {
-	n, _ := strconv.Atoi(s)
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		logger.Error("Got error while parsing int", zap.Error(err))
+	}
 	return n
 }
 
@@ -517,13 +518,13 @@ func handleLastActionText(ctx context.Context) error {
 
 	la, err := getLastAction(ctx)
 	if err != nil {
-		log.Println(err)
+		logger.Error("Can't get last action", zap.Error(err))
 		return err
 	}
 
 	value, ok := ctx.Value("msg").(string)
 	if !ok {
-		log.Println(ErrCantParseCtx)
+		logger.Info("Can't get message", zap.Error(ErrCantParseCtx))
 		return ErrCantParseCtx
 	}
 
@@ -550,7 +551,7 @@ func handleLastActionText(ctx context.Context) error {
 				msg.Text = "Can't set number of words"
 				msg.ReplyMarkup = IKBCancelAction
 				bot.Send(msg)
-				log.Println(err)
+				logger.Error("Can't set number of words", zap.Error(err))
 				return err
 			}
 			msg.Text = "Number of words successfully changed!"
@@ -579,12 +580,13 @@ func handleLastActionText(ctx context.Context) error {
 			if err != nil {
 				msg.Text = "Error on the server side. Sorry."
 				bot.Send(msg)
-				log.Println(err)
+				logger.Error("Can't set separator", zap.Error(err), zap.Int64("personid", pid), zap.String("separator", value))
 				return err
 			}
 
 			msg.Text = "Separator successfully changed"
 			bot.Send(msg)
+			logger.Info("Changed separator of user", zap.Int64("personid", msg.ChatID), zap.Int("seplength", len(value)))
 			return removeLastAction(ctx)
 		} else {
 			msg.Text = "Separator have to be less than 8 bytes long"
@@ -607,7 +609,7 @@ func removeLastAction(ctx context.Context) error {
 	if conn, ok := ctx.Value("redis-conn").(RedisConn); ok {
 		pid, ok := ctx.Value("person").(int64)
 		if !ok {
-			log.Println(ErrCantParseCtx)
+			logger.Error("Can't get PersonID from context")
 			return ErrCantParseCtx
 		}
 		return conn.NewRedisDelRequest().ID(pid).DeleteLastAction()
@@ -621,14 +623,14 @@ func setLastAction(ctx context.Context, lastAction LastAction) error {
 	if conn, ok := ctx.Value("redis-conn").(RedisConn); ok {
 		pid, ok := ctx.Value("person").(int64)
 		if !ok {
-			log.Println(ErrCantParseCtx)
+			logger.Error("Can't get PersonID from context")
 			return ErrCantParseCtx
 		}
 
 		return conn.NewRedisSetRequest().SetLastAction(pid, lastAction)
 
 	}
-	log.Println(ErrCantParseCtx)
+	logger.Error("Can't get redis conn from context")
 	return ErrCantParseCtx
 }
 
@@ -637,13 +639,51 @@ func getLastAction(ctx context.Context) (LastAction, error) {
 		pid, ok := ctx.Value("person").(int64)
 
 		if !ok {
-			log.Println(ErrCantParseCtx)
+			logger.Error("Can't get PersonID from context")
 			return "", ErrCantParseCtx
 		}
 
 		return conn.NewRedisGetRequest().ID(pid).GetLastAction()
 
 	}
-	log.Println(ErrCantParseCtx)
+	logger.Error("Can't get connection from context")
 	return "", ErrCantParseCtx
+}
+
+func NewLogger() *zap.Logger {
+	fileInfo, err := os.OpenFile("log_info.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Panic(err)
+	}
+	fileError, err := os.OpenFile("log_error.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	lowPriority := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+		return lvl < zapcore.ErrorLevel
+	})
+	highPriority := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+		return lvl >= zapcore.ErrorLevel
+	})
+
+	fileDebugging := zapcore.Lock(fileInfo)
+	fileErrors := zapcore.Lock(fileError)
+
+	consoleDebugging := zapcore.Lock(os.Stdout)
+	consoleErrors := zapcore.Lock(os.Stderr)
+
+	fileEncoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+	consoleEncoder := zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig())
+
+	core := zapcore.NewTee(
+		zapcore.NewCore(fileEncoder, fileErrors, highPriority),
+		zapcore.NewCore(consoleEncoder, consoleErrors, highPriority),
+		zapcore.NewCore(fileEncoder, fileDebugging, lowPriority),
+		zapcore.NewCore(consoleEncoder, consoleDebugging, lowPriority),
+	)
+
+	logger := zap.New(core)
+
+	return logger
 }
