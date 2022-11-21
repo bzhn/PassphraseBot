@@ -244,7 +244,6 @@ func (r *RedisGetRequest) GetPersonList() WL {
 
 	n, err := r.conn.doInt("GET", fmt.Sprintf("plist:%d", r.id))
 	if err != nil {
-		log.Println("ERROR:", err)
 		return 0
 	}
 	return WL(n)
