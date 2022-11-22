@@ -21,7 +21,7 @@ Here are the commands that are waiting to be implemented
 
 - [x] Generate passphrase
 - [x] Delete and regenerate existing passphrase
-- [ ] Choose custom wordlist
+- [x] Choose custom wordlist
 - [ ] Add encryption password to the account
 - [ ] Encrypt and store passphrases in the database
 - [ ] Save passphrases with custom notes
