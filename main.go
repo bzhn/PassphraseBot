@@ -51,11 +51,7 @@ var (
 func init() {
 	// Initialise logger
 	logger = NewLogger()
-
-	// Load environmental variables from file .env
-	godotenv.Load("/secret/.env") // For docker
-	godotenv.Load()               // For host
-
+	
 	var err error
 
 	// Use telegram bot
