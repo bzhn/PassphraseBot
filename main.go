@@ -51,10 +51,11 @@ var (
 func init() {
 	// Initialise logger
 	logger = NewLogger()
-	
+
 	var err error
 
 	// Use telegram bot
+	godotenv.Load()
 	bot, err = tgbotapi.NewBotAPI(os.Getenv("PASSPHRASEBOT_TOKEN"))
 	errPanic(err)
 	logger.Info("Connected to Telegram Bot API", zap.String("username", bot.Self.UserName))
@@ -190,20 +191,18 @@ func handleCommand(ctx context.Context, m *tgbotapi.Message) (msg tgbotapi.Messa
 	switch m.Command() {
 	case "start":
 		msg.ReplyMarkup = genButton()
-		msg.Text = "Hello. Use this bot to generate strong mnemonic passwords which, however, easy to memorise!"
+		msg.Text = "Hello. Use this bot to generate strong mnemonic passwords which, however, easy to memorise!\nClick Generate button at the bottom of the chat or type \"gen\""
 		return
 
 	case "help":
 		msg.ReplyMarkup = genButton()
-		msg.Text = `<b>Syntax</b>
-There are several examples below of how you can use this bot to generate passwords.
+		msg.Text = ` This bot allows you to create mnemonic passwords by single click
 
-Generate 5-words password where separator is equals sign:
-<code>5=</code>
-Generate 3-words password with space as a separator:
-<code>3</code>
+You can setup number of words in generated passphrases with /number
 
-Currently syntax parsing is not supported. Type /number to change number of generated words and /sep to change the separator.`
+In order to change default separator between words, type /sep
+		
+You can even change the list of words that will be used for generation. Type /list to try!`
 		msg.ParseMode = tgbotapi.ModeHTML
 		return
 

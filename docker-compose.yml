@@ -3,15 +3,21 @@ version: '3'
 services:
   passphrasebot:
     build: .
-    networks:
-      - pphbot-back
     links:
       - redis
-    restart: always
+    env_file:
+      - .env
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
   redis:
-    image: d29f18e8bc92
-    networks:
-      - pphbot-back
-    restart: always 
-networks:
-  pphbot-back:
+    image: redis
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
