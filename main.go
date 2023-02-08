@@ -30,6 +30,9 @@ const (
 	laSetSeparator LastAction = "setseparator"
 	laSetNubmer    LastAction = "setnumberofwords"
 	laSetEncPass   LastAction = "setencryptionpass"
+
+	defsep = "-" // Default separator
+	deflen = 3   // Default length of passphrase
 )
 
 var (
@@ -219,7 +222,7 @@ You can even change the list of words that will be used for generation. Type /li
 	case "list":
 		msg.ReplyMarkup = IKBWordlistChooser
 		msg.Text = `<b>Select desired wordlist</b>
-		
+
 Here are some examples of generated passphrases:
 BIP39
 <code>spider music exhibit</code>
@@ -357,18 +360,18 @@ func regeneratePassword(ctx context.Context, cq *tgbotapi.CallbackQuery) error {
 					return n
 				} else {
 					logger.Error("Amount of words is less than 1")
-					return 3
+					return deflen
 				}
 			} else {
-				logger.Error("Can't get words number", zap.Error(err))
-				return 3
+				logger.Warn("Can't get words number", zap.Error(err))
+				return deflen
 			}
 		}()
 
 		sep, err := rg.GetSeparator()
 		if err != nil {
-			logger.Error("Can't get separator", zap.Error(err))
-			sep = " "
+			logger.Warn("Can't get separator", zap.Error(err))
+			sep = defsep
 		}
 		gpc := NewGeneratePasswordConfig().Wordlist(wl).Length(n).Separator(sep)
 		passphrase, err := gpc.Generate()
@@ -408,18 +411,18 @@ func generatePassphrase(ctx context.Context, chatID int64) error {
 					return n
 				} else {
 					logger.Error("Amount of words is less than 1", zap.Int64("personid", chatID))
-					return 3
+					return deflen
 				}
 			} else {
 				logger.Warn("Can't get words number from redis", zap.Error(err))
-				return 3
+				return deflen
 			}
 		}()
 
 		sep, err := rg.GetSeparator()
 		if err != nil {
 			logger.Warn("Can't get separator", zap.Error(err))
-			sep = "-"
+			sep = defsep
 		}
 		gpc := NewGeneratePasswordConfig().Wordlist(wl).Length(n).Separator(sep)
 		passphrase, err := gpc.Generate()
