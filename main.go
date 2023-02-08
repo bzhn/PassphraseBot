@@ -473,10 +473,10 @@ func inlPasswordOptions() *tgbotapi.InlineKeyboardMarkup {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔀 Regenerate passphrase", "regenerate"),
 		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💾 Save", "save"),
-			tgbotapi.NewInlineKeyboardButtonData("🖊️ Save with note", "save_with_name"),
-		),
+		// tgbotapi.NewInlineKeyboardRow(
+		// 	tgbotapi.NewInlineKeyboardButtonData("💾 Save", "save"),
+		// 	tgbotapi.NewInlineKeyboardButtonData("🖊️ Save with note", "save_with_name"),
+		// ),
 	)
 
 	return &inlineKeyboard
