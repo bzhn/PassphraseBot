@@ -468,11 +468,15 @@ func genButton() tgbotapi.ReplyKeyboardMarkup {
 func inlPasswordOptions() *tgbotapi.InlineKeyboardMarkup {
 	inlineKeyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🗑️ Delete passphrase", "delete"),
+			tgbotapi.NewInlineKeyboardButtonData("🗑️ Delete", "delete"),
+			tgbotapi.NewInlineKeyboardButtonData("🔀 Regenerate", "regenerate"),
 		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔀 Regenerate passphrase", "regenerate"),
-		),
+		// tgbotapi.NewInlineKeyboardRow(
+		// 	tgbotapi.NewInlineKeyboardButtonData("🗑️ Delete passphrase", "delete"),
+		// ),
+		// tgbotapi.NewInlineKeyboardRow(
+		// 	tgbotapi.NewInlineKeyboardButtonData("🔀 Regenerate passphrase", "regenerate"),
+		// ),
 		// tgbotapi.NewInlineKeyboardRow(
 		// 	tgbotapi.NewInlineKeyboardButtonData("💾 Save", "save"),
 		// 	tgbotapi.NewInlineKeyboardButtonData("🖊️ Save with note", "save_with_name"),
