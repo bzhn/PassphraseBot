@@ -1,0 +1,19 @@
+name: Build and redeploy bot on the remote server
+
+on:
+  push:
+    branches: [ "master" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - name: pull and redeploy bot
+      uses: fifsky/ssh-action@v0.0.6
+      with: 
+        command: cd ~/app/PassphraseBot && echo "PASSPHRASEBOT_TOKEN=${{ secrets.PASSPHRASEBOT_TOKEN }}" > .env && git pull && ./run.sh
+        host: ${{ secrets.SSH_HOST }}
+        port: ${{ secrets.SSH_PORT }}
+        user: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
