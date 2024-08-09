@@ -1,6 +1,10 @@
-# PassphraseBot
+<div align="center">
+  <img src="./assets/logo.jpg" width="100px" />
+  <h1>PassphraseBot</h1>
+  <h3>Telegram Bot for generating mnemonic Passphrases</h3>
 
-This is a Telegram Bot which helps you generate mnemonic passphrases and store them in the database.
+  <a href="https://t.me/PassphraseBot"><img src="https://img.shields.io/badge/Open in Telegram-27A7E7" alt="Telegram PassphraseBot Link"></a>
+</div>
 
 ## Overview
 
